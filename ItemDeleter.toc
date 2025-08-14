@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: ItemDeleter
-## Notes: Automatically deletes specified items from inventory
+## Notes: Automatically deletes specified items from inventory. Use /id for commands.
 ## Author: YourName
-## Version: 1.0
+## Version: 1.1
 ## SavedVariables: ItemDeleterDB
 
 ItemDeleter.lua

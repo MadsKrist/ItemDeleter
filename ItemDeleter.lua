@@ -6,7 +6,10 @@ ItemDeleter = {}
 
 -- Configuration: Add item names you want to delete
 ItemDeleter.ItemsToDelete = {
-    ["Refreshing Spring Water"] = true,
+    ["Broken Fang"] = true,
+    ["Worn Leather Scraps"] = true,
+    ["Cracked Leather Belt"] = true,
+    ["Tattered Cloth Vest"] = true,
     -- Add more items here as needed
     -- Format: ["Exact Item Name"] = true,
 }
@@ -16,41 +19,19 @@ ItemDeleter.Settings = {
     enabled = true,
     requireConfirmation = true,  -- Set to false for automatic deletion
     debugMode = false,
-    autoScanOnBagUpdate = true,
 }
 
 -- Initialize the addon
 function ItemDeleter:Initialize()
     self:Print("ItemDeleter loaded! Type /itemdeleter for commands.")
     
-    -- Register events
-    self:RegisterEvents()
-    
     -- Create slash commands
     self:CreateSlashCommands()
 end
 
--- Register necessary events
-function ItemDeleter:RegisterEvents()
-    local frame = CreateFrame("Frame")
-    
-    -- Bag update event
-    if self.Settings.autoScanOnBagUpdate then
-        frame:RegisterEvent("BAG_UPDATE")
-    end
-    
-    frame:SetScript("OnEvent", function()
-        if event == "BAG_UPDATE" and ItemDeleter.Settings.enabled then
-            ItemDeleter:ScanAndDeleteItems()
-        end
-    end)
-    
-    self.eventFrame = frame
-end
-
--- Main function to scan inventory and delete items
-function ItemDeleter:ScanAndDeleteItems()
-    local deletedItems = {}
+-- Scan inventory and collect items to delete (without deleting)
+function ItemDeleter:ScanInventoryForDeletion()
+    local itemsToDelete = {}
     
     -- Scan all bags (0-4, where 0 is backpack)
     for bag = 0, 4 do
@@ -62,20 +43,54 @@ function ItemDeleter:ScanAndDeleteItems()
                     local itemName = self:GetItemNameFromLink(itemLink)
                     
                     if self.ItemsToDelete[itemName] then
-                        if self.Settings.requireConfirmation then
-                            self:ConfirmDeletion(bag, slot, itemName)
-                        else
-                            self:DeleteItem(bag, slot, itemName)
-                            table.insert(deletedItems, itemName)
-                        end
+                        local _, itemCount = GetContainerItemInfo(bag, slot)
+                        table.insert(itemsToDelete, {
+                            bag = bag,
+                            slot = slot,
+                            name = itemName,
+                            count = itemCount or 1
+                        })
                     end
                 end
             end
         end
     end
     
-    -- Report deleted items
-    if table.getn(deletedItems) > 0 and not self.Settings.requireConfirmation then
+    return itemsToDelete
+end
+
+-- Main function to scan inventory and delete items
+function ItemDeleter:ScanAndDeleteItems()
+    local itemsToDelete = self:ScanInventoryForDeletion()
+    
+    if table.getn(itemsToDelete) == 0 then
+        self:Print("No items found to delete.")
+        return
+    end
+    
+    if self.Settings.requireConfirmation then
+        self:ShowDeletionConfirmation(itemsToDelete)
+    else
+        self:DeleteItemsList(itemsToDelete)
+    end
+end
+
+-- Delete a list of items
+function ItemDeleter:DeleteItemsList(itemsToDelete)
+    local deletedItems = {}
+    
+    for i = 1, table.getn(itemsToDelete) do
+        local item = itemsToDelete[i]
+        self:DeleteItem(item.bag, item.slot, item.name)
+        
+        local countText = ""
+        if item.count > 1 then
+            countText = " x" .. item.count
+        end
+        table.insert(deletedItems, item.name .. countText)
+    end
+    
+    if table.getn(deletedItems) > 0 then
         self:Print("Deleted items: " .. table.concat(deletedItems, ", "))
     end
 end
@@ -103,31 +118,93 @@ function ItemDeleter:DeleteItem(bag, slot, itemName)
     end
 end
 
--- Show confirmation dialog for item deletion
-function ItemDeleter:ConfirmDeletion(bag, slot, itemName)
-    local dialog = "Delete " .. itemName .. "?"
+-- Show comprehensive confirmation dialog for item deletion
+function ItemDeleter:ShowDeletionConfirmation(itemsToDelete)
+    -- Build the confirmation message
+    local message = "Delete the following items?|n|n"
+    local itemCounts = {}
     
-    -- Create a simple confirmation using the default UI
-    StaticPopupDialogs["ITEMDELETER_CONFIRM"] = {
-        text = dialog,
-        button1 = "Yes",
-        button2 = "No",
+    -- Group items by name and count them
+    for i = 1, table.getn(itemsToDelete) do
+        local item = itemsToDelete[i]
+        if not itemCounts[item.name] then
+            itemCounts[item.name] = 0
+        end
+        itemCounts[item.name] = itemCounts[item.name] + item.count
+    end
+    
+    -- Build the display list
+    for itemName, totalCount in pairs(itemCounts) do
+        if totalCount > 1 then
+            message = message .. "- " .. itemName .. " x" .. totalCount .. "|n"
+        else
+            message = message .. "- " .. itemName .. "|n"
+        end
+    end
+    
+    message = message .. "|nThis action cannot be undone!"
+    
+    -- Create confirmation dialog
+    StaticPopupDialogs["ITEMDELETER_CONFIRM_ALL"] = {
+        text = message,
+        button1 = "Delete All",
+        button2 = "Cancel",
         OnAccept = function()
-            ItemDeleter:DeleteItem(bag, slot, itemName)
-            ItemDeleter:Print("Deleted: " .. itemName)
+            ItemDeleter:DeleteItemsList(itemsToDelete)
+        end,
+        OnCancel = function()
+            ItemDeleter:Print("Deletion cancelled.")
         end,
         timeout = 0,
         whileDead = 1,
-        hideOnEscape = 1
+        hideOnEscape = 1,
+        preferredIndex = 3,  -- Higher priority popup
     }
     
-    StaticPopup_Show("ITEMDELETER_CONFIRM")
+    StaticPopup_Show("ITEMDELETER_CONFIRM_ALL")
 end
 
--- Manually scan inventory (called by slash command)
-function ItemDeleter:ManualScan()
+-- Manually scan and delete items (called by slash command)
+function ItemDeleter:ManualDelete()
+    if not self.Settings.enabled then
+        self:Print("ItemDeleter is disabled. Use /id toggle to enable.")
+        return
+    end
+    
     self:Print("Scanning inventory for items to delete...")
     self:ScanAndDeleteItems()
+end
+
+-- Preview what items would be deleted
+function ItemDeleter:PreviewDeletion()
+    self:Print("Scanning inventory for items that would be deleted...")
+    local itemsToDelete = self:ScanInventoryForDeletion()
+    
+    if table.getn(itemsToDelete) == 0 then
+        self:Print("No items found that match deletion list.")
+        return
+    end
+    
+    self:Print("Items that would be deleted:")
+    local itemCounts = {}
+    
+    -- Group items by name and count them
+    for i = 1, table.getn(itemsToDelete) do
+        local item = itemsToDelete[i]
+        if not itemCounts[item.name] then
+            itemCounts[item.name] = 0
+        end
+        itemCounts[item.name] = itemCounts[item.name] + item.count
+    end
+    
+    -- Display the list
+    for itemName, totalCount in pairs(itemCounts) do
+        if totalCount > 1 then
+            self:Print("- " .. itemName .. " x" .. totalCount)
+        else
+            self:Print("- " .. itemName)
+        end
+    end
 end
 
 -- Add item to deletion list
@@ -177,8 +254,10 @@ function ItemDeleter:CreateSlashCommands()
         local command, arg = string.match(msg, "^(%S+)%s*(.*)$")
         command = string.lower(command or "")
         
-        if command == "scan" then
-            ItemDeleter:ManualScan()
+        if command == "delete" then
+            ItemDeleter:ManualDelete()
+        elseif command == "preview" then
+            ItemDeleter:PreviewDeletion()
         elseif command == "add" then
             ItemDeleter:AddItem(arg)
         elseif command == "remove" or command == "rem" then
@@ -196,7 +275,8 @@ function ItemDeleter:CreateSlashCommands()
             ItemDeleter:Print("Debug mode " .. (ItemDeleter.Settings.debugMode and "enabled" or "disabled"))
         else
             ItemDeleter:Print("Commands:")
-            ItemDeleter:Print("/itemdeleter scan - Manually scan inventory")
+            ItemDeleter:Print("/itemdeleter delete - Scan and delete configured items")
+            ItemDeleter:Print("/itemdeleter preview - Show what items would be deleted")
             ItemDeleter:Print("/itemdeleter add <item> - Add item to deletion list")
             ItemDeleter:Print("/itemdeleter remove <item> - Remove item from deletion list")
             ItemDeleter:Print("/itemdeleter list - Show all items in deletion list")

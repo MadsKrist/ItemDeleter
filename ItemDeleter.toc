@@ -2,7 +2,7 @@
 ## Title: ItemDeleter
 ## Notes: Automatically deletes specified items from inventory. Use /id for commands.
 ## Author: YourName
-## Version: 1.1
+## Version: 1.2
 ## SavedVariables: ItemDeleterDB
 
 ItemDeleter.lua

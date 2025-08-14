@@ -361,5 +361,11 @@ function ItemDeleter:CreateSlashCommands()
     end
 end
 
--- Initialize when addon loads
-ItemDeleter:Initialize()
+-- Event handling for addon loading
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript("OnEvent", function()
+    if event == "ADDON_LOADED" and arg1 == "ItemDeleter" then
+        ItemDeleter:Initialize()
+    end
+end)

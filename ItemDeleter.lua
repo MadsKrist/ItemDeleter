@@ -4,8 +4,8 @@
 -- Addon namespace
 ItemDeleter = {}
 
--- Configuration: Add item names you want to delete
-ItemDeleter.ItemsToDelete = {
+-- Default configuration: Add item names you want to delete by default
+ItemDeleter.DefaultItemsToDelete = {
     ["Broken Fang"] = true,
     ["Worn Leather Scraps"] = true,
     ["Cracked Leather Belt"] = true,
@@ -14,19 +14,83 @@ ItemDeleter.ItemsToDelete = {
     -- Format: ["Exact Item Name"] = true,
 }
 
--- Settings
-ItemDeleter.Settings = {
-    enabled = true,
-    requireConfirmation = true,  -- Set to false for automatic deletion
-    debugMode = false,
-}
+-- This will be loaded from SavedVariables
+ItemDeleter.ItemsToDelete = {}
+
+-- Settings (will be loaded from SavedVariables)
+ItemDeleter.Settings = {}
+
+-- Reset to default items
+function ItemDeleter:ResetToDefaults()
+    self.ItemsToDelete = {}
+    for itemName, _ in pairs(self.DefaultItemsToDelete) do
+        self.ItemsToDelete[itemName] = true
+    end
+    self:SaveSettings()
+    self:Print("Reset to default items. Current list has " .. self:CountItems() .. " items.")
+end
+
+-- Clear all items from deletion list
+function ItemDeleter:ClearAllItems()
+    self.ItemsToDelete = {}
+    self:SaveSettings()
+    self:Print("Cleared all items from deletion list.")
+end
 
 -- Initialize the addon
 function ItemDeleter:Initialize()
-    self:Print("ItemDeleter loaded! Type /itemdeleter for commands.")
+    self:LoadSavedVariables()
+    self:Print("ItemDeleter loaded! Type /id for commands.")
     
     -- Create slash commands
     self:CreateSlashCommands()
+end
+
+-- Load saved variables and set defaults
+function ItemDeleter:LoadSavedVariables()
+    -- Initialize saved variables if they don't exist
+    if not ItemDeleterDB then
+        ItemDeleterDB = {}
+    end
+    
+    -- Load settings
+    if not ItemDeleterDB.settings then
+        ItemDeleterDB.settings = {
+            enabled = true,
+            requireConfirmation = true,
+            debugMode = false,
+        }
+    end
+    self.Settings = ItemDeleterDB.settings
+    
+    -- Load items to delete
+    if not ItemDeleterDB.itemsToDelete then
+        ItemDeleterDB.itemsToDelete = {}
+        -- Copy default items to saved variables
+        for itemName, _ in pairs(self.DefaultItemsToDelete) do
+            ItemDeleterDB.itemsToDelete[itemName] = true
+        end
+    end
+    self.ItemsToDelete = ItemDeleterDB.itemsToDelete
+    
+    self:Print("Loaded " .. self:CountItems() .. " items in deletion list.")
+end
+
+-- Save settings to saved variables
+function ItemDeleter:SaveSettings()
+    if ItemDeleterDB then
+        ItemDeleterDB.settings = self.Settings
+        ItemDeleterDB.itemsToDelete = self.ItemsToDelete
+    end
+end
+
+-- Count items in deletion list
+function ItemDeleter:CountItems()
+    local count = 0
+    for _, _ in pairs(self.ItemsToDelete) do
+        count = count + 1
+    end
+    return count
 end
 
 -- Scan inventory and collect items to delete (without deleting)
@@ -211,9 +275,10 @@ end
 function ItemDeleter:AddItem(itemName)
     if itemName and itemName ~= "" then
         self.ItemsToDelete[itemName] = true
+        self:SaveSettings()
         self:Print("Added '" .. itemName .. "' to deletion list.")
     else
-        self:Print("Usage: /itemdeleter add <item name>")
+        self:Print("Usage: /id add <item name>")
     end
 end
 
@@ -221,6 +286,7 @@ end
 function ItemDeleter:RemoveItem(itemName)
     if itemName and self.ItemsToDelete[itemName] then
         self.ItemsToDelete[itemName] = nil
+        self:SaveSettings()
         self:Print("Removed '" .. itemName .. "' from deletion list.")
     else
         self:Print("Item not found in deletion list.")
@@ -247,8 +313,7 @@ end
 
 -- Create slash commands
 function ItemDeleter:CreateSlashCommands()
-    SLASH_ITEMDELETER1 = "/itemdeleter"
-    SLASH_ITEMDELETER2 = "/id"
+    SLASH_ITEMDELETER1 = "/id"
     
     SlashCmdList["ITEMDELETER"] = function(msg)
         local command, arg = string.match(msg, "^(%S+)%s*(.*)$")
@@ -266,23 +331,32 @@ function ItemDeleter:CreateSlashCommands()
             ItemDeleter:ListItems()
         elseif command == "toggle" then
             ItemDeleter.Settings.enabled = not ItemDeleter.Settings.enabled
+            ItemDeleter:SaveSettings()
             ItemDeleter:Print("ItemDeleter " .. (ItemDeleter.Settings.enabled and "enabled" or "disabled"))
         elseif command == "confirm" then
             ItemDeleter.Settings.requireConfirmation = not ItemDeleter.Settings.requireConfirmation
+            ItemDeleter:SaveSettings()
             ItemDeleter:Print("Confirmation " .. (ItemDeleter.Settings.requireConfirmation and "enabled" or "disabled"))
         elseif command == "debug" then
             ItemDeleter.Settings.debugMode = not ItemDeleter.Settings.debugMode
+            ItemDeleter:SaveSettings()
             ItemDeleter:Print("Debug mode " .. (ItemDeleter.Settings.debugMode and "enabled" or "disabled"))
+        elseif command == "reset" then
+            ItemDeleter:ResetToDefaults()
+        elseif command == "clear" then
+            ItemDeleter:ClearAllItems()
         else
             ItemDeleter:Print("Commands:")
-            ItemDeleter:Print("/itemdeleter delete - Scan and delete configured items")
-            ItemDeleter:Print("/itemdeleter preview - Show what items would be deleted")
-            ItemDeleter:Print("/itemdeleter add <item> - Add item to deletion list")
-            ItemDeleter:Print("/itemdeleter remove <item> - Remove item from deletion list")
-            ItemDeleter:Print("/itemdeleter list - Show all items in deletion list")
-            ItemDeleter:Print("/itemdeleter toggle - Enable/disable addon")
-            ItemDeleter:Print("/itemdeleter confirm - Toggle confirmation dialogs")
-            ItemDeleter:Print("/itemdeleter debug - Toggle debug mode")
+            ItemDeleter:Print("/id delete - Scan and delete configured items")
+            ItemDeleter:Print("/id preview - Show what items would be deleted")
+            ItemDeleter:Print("/id add <item> - Add item to deletion list")
+            ItemDeleter:Print("/id remove <item> - Remove item from deletion list")
+            ItemDeleter:Print("/id list - Show all items in deletion list")
+            ItemDeleter:Print("/id clear - Clear all items from deletion list")
+            ItemDeleter:Print("/id reset - Reset to default items")
+            ItemDeleter:Print("/id toggle - Enable/disable addon")
+            ItemDeleter:Print("/id confirm - Toggle confirmation dialogs")
+            ItemDeleter:Print("/id debug - Toggle debug mode")
         end
     end
 end
